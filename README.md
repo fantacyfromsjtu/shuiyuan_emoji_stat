@@ -190,7 +190,7 @@ https://shuiyuan.sjtu.edu.cn/user_actions.json?username={username}&filter=5&offs
 - `offset`：分页偏移（每页30条）
 
 
-## 示例输出
+## 示例输出图表
 
 ![Top 10 Emojis](./assets/example.png)
 
