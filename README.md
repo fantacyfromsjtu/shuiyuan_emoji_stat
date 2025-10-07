@@ -25,7 +25,7 @@ pip install -r requirements.txt
 python user_emoji_stats.py --set-cookie "你的Cookie字符串"
 ```
 
-**方式二：手动创建文件**
+**方式二（Recommended）：手动创建文件**
 创建 `cookies.txt` 文件，粘贴你的 Cookie 内容。
 
 **如何获取 Cookie？**
@@ -36,6 +36,25 @@ python user_emoji_stats.py --set-cookie "你的Cookie字符串"
 5. 找到 Cookie 字段，复制整个值
 
 ### 3. 开始使用
+
+#### GUI模式（推荐）
+**图形界面（按天选择时间窗口）：**
+```bash
+python user_emoji_stats.py --gui
+```
+在 GUI 中：
+- 输入用户名
+- 选择开始/结束日期（YYYY-MM-DD，可留空，内置日历选取器）
+- 可选最大页数
+- 点击“开始分析”，完成后“打开输出目录”查看报告与图表
+ - 提供快捷按钮：最近7天 / 最近30天 / 本月 / 今年
+
+如遇未安装 tkcalendar，将自动回退为手动输入日期；安装：
+```bash
+pip install tkcalendar
+```
+
+#### CLI模式
 
 **分析单个用户：**
 ```bash
@@ -66,21 +85,7 @@ python user_emoji_stats.py
 python user_emoji_stats.py
 ```
 
-**图形界面（按天选择时间窗口）：**
-```bash
-python user_emoji_stats.py --gui
-```
-在 GUI 中：
-- 输入用户名
-- 选择开始/结束日期（YYYY-MM-DD，可留空，内置日历选取器）
-- 可选最大页数
-- 点击“开始分析”，完成后“打开输出目录”查看报告与图表
- - 提供快捷按钮：最近7天 / 最近30天 / 本月 / 今年
 
-如遇未安装 tkcalendar，将自动回退为手动输入日期；安装：
-```bash
-pip install tkcalendar
-```
 
 ## 📊 输出示例
 
