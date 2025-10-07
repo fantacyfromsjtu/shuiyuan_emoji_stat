@@ -177,7 +177,7 @@ def extract_emoji_from_html(html_content: str) -> List[str]:
     
     # 最终统一严格过滤，避免任何非规范内容混入
     final_filter = re.compile(r'^:[a-z_]{2,50}:$')
-    return [e for e in emojis if final_filter.match(e)]
+    return [e[1:-1] for e in emojis if final_filter.match(e)]
 
 
 def analyze_user_emojis(username: str, max_pages: int = None, 
@@ -291,6 +291,20 @@ def print_statistics(result: Dict):
     print("="*60 + "\n")
 
 
+def get_emoji_path(emoji:str)->str:
+    """根据 emoji 名称获取本地图片路径"""
+    from itertools import chain 
+    if os.path.exists(f"emoji/{emoji}.png"):
+        return f"emoji/{emoji}.png"
+    with open("emojis.json","r",encoding="UTF-8") as file:
+        data = json.load(file)
+    
+    for i in chain(data["公司"],data["软件服务"],data["default"],data["游戏"],data["学校"],data["编程语言"]):
+        if i["name"] == emoji:
+            path="emoji/"+i["url"][32:]
+            break
+    return path
+
 def save_results(result: Dict):
     """保存统计结果到文件"""
     username = result['username']
@@ -300,104 +314,73 @@ def save_results(result: Dict):
     try:
         from matplotlib import pyplot as plt
         from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-        import platform
-        try:
-            import emoji as _emoji
-        except Exception:
-            _emoji = None
-        try:
-            import requests as _req
-        except Exception:
-            _req = None
+        import matplotlib.image as mpimg
+        import numpy as np
+
+
+        plt.rcParams["font.sans-serif"] = ["Microsoft YaHei"]
+        plt.rcParams["axes.unicode_minus"]=False
         top10 = result['top_10_emojis']
         if top10:
-            def shortcode_to_emoji(code: str) -> str:
-                if _emoji is None:
-                    return code
-                try:
-                    # 将 :smiling_face_with_three_hearts: 转为 🥰
-                    converted = _emoji.emojize(code, language='alias')  # 返回原文则代表未识别
-                    return converted if converted != code else code
-                except Exception:
-                    return code
+            emojis = [e for e,_ in top10]
+            counts = [c for _,c in top10]
+            emoji_paths=[]
+            for i in emojis:
+                emoji_paths.append(get_emoji_path(i))
 
-            labels_raw = [e for e, _ in top10]
-            labels_emoji = [shortcode_to_emoji(lbl) for lbl in labels_raw]
-            # 显示“emoji + 短代码”；若转换失败（仍是短代码），仅显示一次短代码，避免重复
-            labels = []
-            for em, sc in zip(labels_emoji, labels_raw):
-                if em == sc:
-                    labels.append(sc)
-                else:
-                    labels.append(f"{em} {sc}")
-            values = [c for _, c in top10]
-            plt.figure(figsize=(10, 5))
+            fig, ax = plt.subplots(figsize=(16, 9))
+            x_pos = np.arange(len(emojis))
+            bars = ax.bar(x_pos, counts, 
+                        color='#1DA1F2',
+                        alpha=0.75)
+            
+            ax.set_ylabel('Counts')
+            ax.set_title(f'Top 10 Emojis for @{username}')
+            ax.set_ylim(0, max(counts)*1.1)
+            ax.set_xticks([])
+            
+            for i, (emoji, count) in enumerate(zip(emojis, counts)):
+                if os.path.exists(emoji_paths[i]):
+                    try:
+                        from PIL import Image
 
-            # 尝试设置支持彩色 Emoji 的字体
-            os_name = platform.system()
-            if os_name == 'Windows':
-                plt.rcParams['font.family'] = ['Segoe UI Emoji', 'Segoe UI Symbol', 'DejaVu Sans']
-            elif os_name == 'Darwin':
-                plt.rcParams['font.family'] = ['Apple Color Emoji', 'Helvetica Neue', 'DejaVu Sans']
-            else:
-                plt.rcParams['font.family'] = ['Noto Color Emoji', 'DejaVu Sans']
-
-            plt.bar(range(len(values)), values, color='#4C78A8')
-            plt.xticks(range(len(values)), labels, rotation=45, ha='right')
-            plt.ylabel('Count')
-            title_suffix = window_suffix(result.get('since'), result.get('until')).replace('_', ' ').strip()
-            if title_suffix:
-                plt.title(f"Top 10 Emojis for @{username} ({title_suffix})")
-            else:
-                plt.title(f"Top 10 Emojis for @{username}")
-            plt.tight_layout()
+                        #预处理图片：调整大小、背景透明等
+                        img = Image.open(emoji_paths[i])
+                        img=img.convert("RGBA")
+                        original_width, original_height = img.size
+                        ratio = 100 / original_height
+                        new_width = int(original_width * ratio)
+                        img = img.resize((new_width,100),Image.Resampling.LANCZOS)
+                        # 使用imshow显示图片，需要计算合适的位置和大小
+                        imagebox = OffsetImage(img, zoom=0.25)
+                        ab = AnnotationBbox(imagebox, (i, 0),
+                                        xycoords='data',
+                                        frameon=False,
+                                        box_alignment=(0.5, 1))
+                        ax.add_artist(ab)
+                    except Exception as e:
+                        print(f"无法加载logo {emoji_paths[i]}: {e}")
+                
+                # 添加两行文字
+                # 第一行：表情符号
+                ax.text(i,  -0.07*max(counts), emoji, 
+                    ha='center', va='top', fontsize=8)
+                
+                # 第二行：计数
+                ax.text(i,  -0.1*max(counts), f"{count}", 
+                    ha='center', va='top', fontsize=11, color='gray')
+                        
             fname_user = safe_filename(username)
             chart_path = f"{OUTPUT_DIR}/{fname_user}_top10{window_suffix(result.get('since'), result.get('until'))}.png"
-            
-            # 尝试以 Twemoji 彩色图标增强可视化（在柱子上方叠加小图），失败则忽略
-            def emoji_to_twemoji_url(em: str) -> Optional[str]:
-                if not em:
-                    return None
-                codepoints = []
-                for ch in em:
-                    cp = ord(ch)
-                    # 跳过 VARIATION SELECTOR-16（呈现差异）
-                    if cp == 0xFE0F:
-                        continue
-                    codepoints.append(f"{cp:x}")
-                if not codepoints:
-                    return None
-                return f"https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/{'-'.join(codepoints)}.png"
 
-            if _req is not None:
-                y_max = max(values) if values else 0
-                for i, em in enumerate(labels_emoji):
-                    try:
-                        # 仅当确实转换为真实 emoji 时才尝试叠加彩色图标
-                        if em == labels_raw[i] or not any(ord(ch) > 255 for ch in em):
-                            continue
-                        url = emoji_to_twemoji_url(em)
-                        if not url:
-                            continue
-                        r = _req.get(url, timeout=5)
-                        if r.status_code == 200:
-                            img = plt.imread(r.raw, format='png') if hasattr(r, 'raw') else None
-                            if img is None:
-                                import io
-                                bio = io.BytesIO(r.content)
-                                img = plt.imread(bio, format='png')
-                            oi = OffsetImage(img, zoom=0.3)
-                            ab = AnnotationBbox(oi, (i, values[i] + y_max * 0.05), frameon=False)
-                            plt.gca().add_artist(ab)
-                    except Exception:
-                        continue
-
+            plt.show()
             plt.savefig(chart_path, dpi=150)
             plt.close()
         else:
             chart_path = None
-    except Exception:
+    except Exception as e:
         chart_path = None
+        print(e)
 
     # 保存 JSON
     fname_user = safe_filename(username)
