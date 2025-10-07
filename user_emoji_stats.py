@@ -363,11 +363,11 @@ def save_results(result: Dict):
                 
                 # 添加两行文字
                 # 第一行：表情符号
-                ax.text(i,  -1, emoji, 
+                ax.text(i,  -0.07*max(counts), emoji, 
                     ha='center', va='top', fontsize=8)
                 
                 # 第二行：计数
-                ax.text(i,  -1.5, f"{count}", 
+                ax.text(i,  -0.1*max(counts), f"{count}", 
                     ha='center', va='top', fontsize=11, color='gray')
                         
             fname_user = safe_filename(username)
