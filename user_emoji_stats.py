@@ -72,7 +72,7 @@ def get_user_replies(username: str, max_pages: int = None,
     while True:
         if max_pages and page > max_pages:
             break
-        
+            
         # filter=5 表示 replies (回复)
         url = f"{USER_ACTIONS_API}?username={username}&filter=5&offset={offset}"
         
@@ -82,14 +82,14 @@ def get_user_replies(username: str, max_pages: int = None,
             if not response or response.status_code != 200:
                 print(f"请求失败: {response.status_code if response else 'Network Error'}")
                 break
-            
+                
             data = json.loads(response.text)
             user_actions = data.get('user_actions', [])
             
             if not user_actions:
                 print(f"已获取所有回复，共 {len(all_replies)} 条")
                 break
-            
+                
             # 过滤时间窗口（within-page）
             filtered_actions: List[Dict] = []
             page_times: List[datetime] = []
@@ -180,7 +180,7 @@ def extract_emoji_from_html(html_content: str) -> List[str]:
     return [e for e in emojis if final_filter.match(e)]
 
 
-def analyze_user_emojis(username: str, max_pages: int = None,
+def analyze_user_emojis(username: str, max_pages: int = None, 
                         since: Optional[str] = None, until: Optional[str] = None) -> Dict:
     """
     分析指定用户的 emoji 使用情况
@@ -299,11 +299,49 @@ def save_results(result: Dict):
     # 生成 Top10 柱状图
     try:
         from matplotlib import pyplot as plt
+        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+        import platform
+        try:
+            import emoji as _emoji
+        except Exception:
+            _emoji = None
+        try:
+            import requests as _req
+        except Exception:
+            _req = None
         top10 = result['top_10_emojis']
         if top10:
-            labels = [e for e, _ in top10]
+            def shortcode_to_emoji(code: str) -> str:
+                if _emoji is None:
+                    return code
+                try:
+                    # 将 :smiling_face_with_three_hearts: 转为 🥰
+                    converted = _emoji.emojize(code, language='alias')  # 返回原文则代表未识别
+                    return converted if converted != code else code
+                except Exception:
+                    return code
+
+            labels_raw = [e for e, _ in top10]
+            labels_emoji = [shortcode_to_emoji(lbl) for lbl in labels_raw]
+            # 显示“emoji + 短代码”；若转换失败（仍是短代码），仅显示一次短代码，避免重复
+            labels = []
+            for em, sc in zip(labels_emoji, labels_raw):
+                if em == sc:
+                    labels.append(sc)
+                else:
+                    labels.append(f"{em} {sc}")
             values = [c for _, c in top10]
             plt.figure(figsize=(10, 5))
+
+            # 尝试设置支持彩色 Emoji 的字体
+            os_name = platform.system()
+            if os_name == 'Windows':
+                plt.rcParams['font.family'] = ['Segoe UI Emoji', 'Segoe UI Symbol', 'DejaVu Sans']
+            elif os_name == 'Darwin':
+                plt.rcParams['font.family'] = ['Apple Color Emoji', 'Helvetica Neue', 'DejaVu Sans']
+            else:
+                plt.rcParams['font.family'] = ['Noto Color Emoji', 'DejaVu Sans']
+
             plt.bar(range(len(values)), values, color='#4C78A8')
             plt.xticks(range(len(values)), labels, rotation=45, ha='right')
             plt.ylabel('Count')
@@ -315,6 +353,45 @@ def save_results(result: Dict):
             plt.tight_layout()
             fname_user = safe_filename(username)
             chart_path = f"{OUTPUT_DIR}/{fname_user}_top10{window_suffix(result.get('since'), result.get('until'))}.png"
+            
+            # 尝试以 Twemoji 彩色图标增强可视化（在柱子上方叠加小图），失败则忽略
+            def emoji_to_twemoji_url(em: str) -> Optional[str]:
+                if not em:
+                    return None
+                codepoints = []
+                for ch in em:
+                    cp = ord(ch)
+                    # 跳过 VARIATION SELECTOR-16（呈现差异）
+                    if cp == 0xFE0F:
+                        continue
+                    codepoints.append(f"{cp:x}")
+                if not codepoints:
+                    return None
+                return f"https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/{'-'.join(codepoints)}.png"
+
+            if _req is not None:
+                y_max = max(values) if values else 0
+                for i, em in enumerate(labels_emoji):
+                    try:
+                        # 仅当确实转换为真实 emoji 时才尝试叠加彩色图标
+                        if em == labels_raw[i] or not any(ord(ch) > 255 for ch in em):
+                            continue
+                        url = emoji_to_twemoji_url(em)
+                        if not url:
+                            continue
+                        r = _req.get(url, timeout=5)
+                        if r.status_code == 200:
+                            img = plt.imread(r.raw, format='png') if hasattr(r, 'raw') else None
+                            if img is None:
+                                import io
+                                bio = io.BytesIO(r.content)
+                                img = plt.imread(bio, format='png')
+                            oi = OffsetImage(img, zoom=0.3)
+                            ab = AnnotationBbox(oi, (i, values[i] + y_max * 0.05), frameon=False)
+                            plt.gca().add_artist(ab)
+                    except Exception:
+                        continue
+
             plt.savefig(chart_path, dpi=150)
             plt.close()
         else:
@@ -356,7 +433,7 @@ def save_results(result: Dict):
         f.write("\n## 完整 Emoji 使用频率\n\n")
         f.write("| Emoji | 使用次数 | 占比 |\n")
         f.write("|-------|----------|------|\n")
-        for emoji, count in sorted(result['emoji_frequency'].items(),
+        for emoji, count in sorted(result['emoji_frequency'].items(), 
                                    key=lambda x: x[1], reverse=True):
             percentage = count / result['total_emojis'] * 100 if result['total_emojis'] > 0 else 0
             f.write(f"| {emoji} | {count} | {percentage:.2f}% |\n")
@@ -444,8 +521,8 @@ if __name__ == "__main__":
         description="统计水源社区用户的 Emoji 使用情况"
     )
     parser.add_argument(
-        'username',
-        type=str,
+        'username', 
+        type=str, 
         nargs='?',
         help='要分析的用户名（例如: krm_desuwa）'
     )
