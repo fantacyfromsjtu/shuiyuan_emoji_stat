@@ -1,6 +1,6 @@
 # 水源社区用户 Emoji 统计工具
 
-一个用于统计水源社区用户发言中 emoji 使用情况的独立工具。
+一个用于统计水源社区用户发言中 emoji 使用情况的小工具。基于https://github.com/Labyrinth0419/shuiyuan_exporter 和cursor（大雾）开发
 
 ## ✨ 功能特性
 
