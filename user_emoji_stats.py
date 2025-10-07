@@ -109,10 +109,13 @@ def get_user_replies(username: str, max_pages: int = None,
             all_replies.extend(filtered_actions)
             print(f"第 {page} 页: 获取了 {len(user_actions)} 条，窗口内 {len(filtered_actions)} 条 (累计 {len(all_replies)} 条)")
 
-            # 提前停止条件：页面最老时间 < since_dt（后续只会更老）
+            # 提前停止条件：页面最老时间 < since_dt（后续只会更老）。
+            # 边界：若 since_dt 远早于最老内容，则不触发停止条件，正常拉完。
             if since_dt and page_times:
                 oldest_on_page = min(page_times)
-                if oldest_on_page < since_dt:
+                newest_on_page = max(page_times)
+                # 只有当本页全部时间都早于窗口起点，且上一页已经包含了与窗口交集时，才停止。
+                if newest_on_page < since_dt:
                     print("达到开始时间阈值，停止翻页。")
                     break
             
@@ -294,16 +297,18 @@ def print_statistics(result: Dict):
 def get_emoji_path(emoji:str)->str:
     """根据 emoji 名称获取本地图片路径"""
     from itertools import chain 
-    if os.path.exists(f"emoji/{emoji}.png"):
-        return f"emoji/{emoji}.png"
+    default_path = f"emoji/{emoji}.png"
+    if os.path.exists(default_path):
+        return default_path
     with open("emojis.json","r",encoding="UTF-8") as file:
         data = json.load(file)
     
-    for i in chain(data["公司"],data["软件服务"],data["default"],data["游戏"],data["学校"],data["编程语言"]):
-        if i["name"] == emoji:
-            path="emoji/"+i["url"][32:]
-            break
-    return path
+    for i in chain(data.get("公司",[]),data.get("软件服务",[]),data.get("default",[]),data.get("游戏",[]),data.get("学校",[]),data.get("编程语言",[])):
+        if i.get("name") == emoji:
+            candidate = "emoji/"+str(i.get("url",""))[32:]
+            return candidate
+    # 未找到则返回空字符串，调用方用 exists 校验
+    return ""
 
 def save_results(result: Dict):
     """保存统计结果到文件"""
@@ -591,32 +596,60 @@ if __name__ == "__main__":
             username_entry = ttk.Entry(main, textvariable=username_var, width=32)
             username_entry.grid(row=0, column=1, columnspan=2, sticky=tk.W)
 
-            # since/until（按天，日历选择器优先）
-            ttk.Label(main, text="开始日期:").grid(row=1, column=0, sticky=tk.W)
-            ttk.Label(main, text="结束日期:").grid(row=2, column=0, sticky=tk.W)
+            # since/until（按天，日历选择器优先）容器
+            date_frame = ttk.Frame(main)
+            date_frame.grid(row=1, column=0, columnspan=3, sticky=tk.W)
+
+            ttk.Label(date_frame, text="开始日期:").grid(row=0, column=0, sticky=tk.W)
+            ttk.Label(date_frame, text="结束日期:").grid(row=1, column=0, sticky=tk.W)
             since_var = tk.StringVar()
             until_var = tk.StringVar()
 
             if _tkcalendar_ok:
-                since_picker = DateEntry(main, date_pattern='yyyy-mm-dd', width=14)
-                until_picker = DateEntry(main, date_pattern='yyyy-mm-dd', width=14)
-                since_picker.grid(row=1, column=1, sticky=tk.W)
-                until_picker.grid(row=2, column=1, sticky=tk.W)
-                ttk.Label(main, text="(可留空)").grid(row=1, column=2, sticky=tk.W)
-                ttk.Label(main, text="(可留空)").grid(row=2, column=2, sticky=tk.W)
+                since_picker = DateEntry(date_frame, date_pattern='yyyy-mm-dd', width=14)
+                until_picker = DateEntry(date_frame, date_pattern='yyyy-mm-dd', width=14)
+                since_picker.grid(row=0, column=1, sticky=tk.W)
+                until_picker.grid(row=1, column=1, sticky=tk.W)
+                since_lbl = ttk.Label(date_frame, text="(可留空)")
+                until_lbl = ttk.Label(date_frame, text="(可留空)")
+                since_lbl.grid(row=0, column=2, sticky=tk.W)
+                until_lbl.grid(row=1, column=2, sticky=tk.W)
             else:
-                since_entry = ttk.Entry(main, textvariable=since_var, width=16)
-                since_entry.grid(row=1, column=1, sticky=tk.W)
-                until_entry = ttk.Entry(main, textvariable=until_var, width=16)
-                until_entry.grid(row=2, column=1, sticky=tk.W)
-                ttk.Label(main, text="YYYY-MM-DD (可留空)").grid(row=1, column=2, sticky=tk.W)
-                ttk.Label(main, text="YYYY-MM-DD (可留空)").grid(row=2, column=2, sticky=tk.W)
+                since_entry = ttk.Entry(date_frame, textvariable=since_var, width=16)
+                since_entry.grid(row=0, column=1, sticky=tk.W)
+                until_entry = ttk.Entry(date_frame, textvariable=until_var, width=16)
+                until_entry.grid(row=1, column=1, sticky=tk.W)
+                since_lbl = ttk.Label(date_frame, text="YYYY-MM-DD (可留空)")
+                until_lbl = ttk.Label(date_frame, text="YYYY-MM-DD (可留空)")
+                since_lbl.grid(row=0, column=2, sticky=tk.W)
+                until_lbl.grid(row=1, column=2, sticky=tk.W)
+
+            # 窗口范围选择（全部/自定义）
+            mode_var = tk.StringVar(value='all')
+            ttk.Label(main, text="时间范围:").grid(row=3, column=0, sticky=tk.W)
+            r_all = ttk.Radiobutton(main, text="全部", variable=mode_var, value='all')
+            r_custom = ttk.Radiobutton(main, text="自定义", variable=mode_var, value='custom')
+            r_all.grid(row=3, column=1, sticky=tk.W)
+            r_custom.grid(row=3, column=2, sticky=tk.W)
+
+            def update_date_widgets():
+                if mode_var.get() == 'custom':
+                    date_frame.grid()
+                    if 'quick_frame' in locals():
+                        quick_frame.grid()
+                else:
+                    date_frame.grid_remove()
+                    if 'quick_frame' in locals():
+                        quick_frame.grid_remove()
+
+            mode_var.trace_add('write', lambda *args: update_date_widgets())
+            update_date_widgets()
 
             # 页数限制
-            ttk.Label(main, text="最大页数 (可选):").grid(row=3, column=0, sticky=tk.W)
+            ttk.Label(main, text="最大页数 (可选):").grid(row=4, column=0, sticky=tk.W)
             max_pages_var = tk.StringVar()
             max_pages_entry = ttk.Entry(main, textvariable=max_pages_var, width=8)
-            max_pages_entry.grid(row=3, column=1, sticky=tk.W)
+            max_pages_entry.grid(row=4, column=1, sticky=tk.W)
 
             # 状态
             status_var = tk.StringVar(value="准备就绪…")
@@ -646,14 +679,17 @@ if __name__ == "__main__":
                     messagebox.showwarning("提示", "请输入用户名")
                     return
 
-                if _tkcalendar_ok:
-                    s = since_picker.get_date() if since_picker.get() else None
-                    u = until_picker.get_date() if until_picker.get() else None
-                    since_iso = to_iso_day(s.strftime('%Y-%m-%d') if s else '', end=False)
-                    until_iso = to_iso_day(u.strftime('%Y-%m-%d') if u else '', end=True)
+                if mode_var.get() == 'all':
+                    since_iso, until_iso = None, None
                 else:
-                    since_iso = to_iso_day(since_var.get().strip(), end=False)
-                    until_iso = to_iso_day(until_var.get().strip(), end=True)
+                    if _tkcalendar_ok:
+                        s = since_picker.get_date() if since_picker.get() else None
+                        u = until_picker.get_date() if until_picker.get() else None
+                        since_iso = to_iso_day(s.strftime('%Y-%m-%d') if s else '', end=False)
+                        until_iso = to_iso_day(u.strftime('%Y-%m-%d') if u else '', end=True)
+                    else:
+                        since_iso = to_iso_day(since_var.get().strip(), end=False)
+                        until_iso = to_iso_day(until_var.get().strip(), end=True)
 
                 max_pages = None
                 mp_raw = max_pages_var.get().strip()
