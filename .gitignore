@@ -1,0 +1,24 @@
+# Cookie 文件（敏感信息）
+cookies.txt
+
+# 输出目录
+emoji_stats_output/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
